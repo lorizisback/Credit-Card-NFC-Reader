@@ -164,7 +164,7 @@ public class CardNfcAsyncTask extends AsyncTask<Void, Void, Object>{
             if (mCard != null) {
                 if (StringUtils.isNotBlank(mCard.getCardNumber())) {
                     mCardNumber = mCard.getCardNumber();
-                    mExpireDate = mCard.getExpireDate();
+                    mExpireDate = mCard.getExpiryDate();
                     mCardType = mCard.getType().toString();
                     if (mCardType.equals(EmvCardScheme.UNKNOWN.toString())){
                         Log.d("creditCardNfcReader", UNKNOWN_CARD_MESS);

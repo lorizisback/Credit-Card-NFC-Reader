@@ -1,11 +1,9 @@
 package com.pro100svitlo.nfccardread
 
 import android.app.ProgressDialog
-import android.content.ActivityNotFoundException
 import android.content.Intent
-import android.net.Uri
 import android.nfc.NfcAdapter
-import android.os.Build
+import android.nfc.Tag
 import android.os.Bundle
 import android.provider.Settings
 import android.view.View
@@ -17,46 +15,48 @@ import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.snackbar.Snackbar
 import com.pro100svitlo.creditCardNfcReader.CardNfcAsyncTask
+import com.pro100svitlo.creditCardNfcReader.CardNfcInterface
 import com.pro100svitlo.creditCardNfcReader.CreditCardReader
+import com.pro100svitlo.creditCardNfcReader.enums.EmvCardScheme
 import com.pro100svitlo.creditCardNfcReader.utils.CardNfcUtils
+import kotlinx.android.synthetic.main.activity_main.*
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
+import kotlin.coroutines.CoroutineContext
 
-class MainActivity : AppCompatActivity(), CardNfcAsyncTask.CardNfcInterface {
+
+class MainActivity : AppCompatActivity(), CardNfcInterface, CoroutineScope {
+    private lateinit var job: Job
+    override val coroutineContext: CoroutineContext
+        get() = job + Dispatchers.Main
+
     private var mCardNfcAsyncTask: CardNfcAsyncTask? = null
     private var mToolbar: MaterialToolbar? = null
-    private var mCardReadyContent: LinearLayout? = null
-    private var mPutCardContent: TextView? = null
-    private var mCardNumberText: TextView? = null
-    private var mExpireDateText: TextView? = null
-    private var mCardLogoIcon: ImageView? = null
-    private var mNfcAdapter: NfcAdapter? = null
+    private val mCardNumberText: TextView by lazy { findViewById(android.R.id.text1) }
+    private val mExpireDateText: TextView by lazy { findViewById(android.R.id.text2) }
+    private val mCardLogoIcon: ImageView by lazy { findViewById(android.R.id.icon) }
+    private val mNfcAdapter: NfcAdapter? by lazy { NfcAdapter.getDefaultAdapter(this) }
     private var mTurnNfcDialog: AlertDialog? = null
     private var mProgressDialog: ProgressDialog? = null
-    private var mDoNotMoveCardMessage: String? = null
-    private var mUnknownEmvCardMessage: String? = null
-    private var mCardWithLockedNfcMessage: String? = null
     private var mIsScanNow = false
     private var mIntentFromCreate = false
-    private var mCardNfcUtils: CardNfcUtils? = null
-    private var mReader: CreditCardReader? = null
+    private val mCardNfcUtils: CardNfcUtils by lazy { CardNfcUtils(this) }
+    private val mReader: CreditCardReader by lazy { CreditCardReader() }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        job = Job()
         setContentView(R.layout.activity_main)
+
         mToolbar = findViewById<View>(R.id.toolbar) as MaterialToolbar
         setSupportActionBar(mToolbar)
-        mNfcAdapter = NfcAdapter.getDefaultAdapter(this)
         if (mNfcAdapter == null) {
             val noNfc = findViewById<View>(android.R.id.candidatesArea) as TextView
             noNfc.visibility = View.VISIBLE
         } else {
-            mCardNfcUtils = CardNfcUtils(this)
-            mPutCardContent = findViewById<View>(R.id.content_putCard) as TextView
-            mCardReadyContent = findViewById<View>(R.id.content_cardReady) as LinearLayout
-            mCardNumberText = findViewById<View>(android.R.id.text1) as TextView
-            mExpireDateText = findViewById<View>(android.R.id.text2) as TextView
-            mCardLogoIcon = findViewById<View>(android.R.id.icon) as ImageView
-            mReader = CreditCardReader()
             createProgressDialog()
-            initNfcMessages()
             mIntentFromCreate = true
             onNewIntent(intent)
         }
@@ -67,11 +67,11 @@ class MainActivity : AppCompatActivity(), CardNfcAsyncTask.CardNfcInterface {
         mIntentFromCreate = false
         if (mNfcAdapter != null && !mNfcAdapter!!.isEnabled) {
             showTurnOnNfcDialog()
-            mPutCardContent!!.visibility = View.GONE
+            content_putCard.visibility = View.GONE
         } else if (mNfcAdapter != null) {
             if (!mIsScanNow) {
-                mPutCardContent!!.visibility = View.VISIBLE
-                mCardReadyContent!!.visibility = View.GONE
+                content_putCard.visibility = View.VISIBLE
+                content_cardReady.visibility = View.GONE
             }
             mCardNfcUtils!!.enableDispatch()
         }
@@ -86,8 +86,12 @@ class MainActivity : AppCompatActivity(), CardNfcAsyncTask.CardNfcInterface {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        if (mNfcAdapter != null && mNfcAdapter!!.isEnabled) {
-            mCardNfcAsyncTask = CardNfcAsyncTask.Builder(this, intent, mIntentFromCreate).build()
+        mNfcAdapter?.let {
+            intent.getParcelableExtra<Tag>(NfcAdapter.EXTRA_TAG)?.let {
+                launch {
+                    mReader.readIntent(it, this@MainActivity, mIntentFromCreate)
+                }
+            }
         }
     }
 
@@ -96,34 +100,38 @@ class MainActivity : AppCompatActivity(), CardNfcAsyncTask.CardNfcInterface {
         mProgressDialog!!.show()
     }
 
-    override fun cardIsReadyToRead() {
-        mPutCardContent!!.visibility = View.GONE
-        mCardReadyContent!!.visibility = View.VISIBLE
-        var card = mCardNfcAsyncTask!!.cardNumber
-        card = getPrettyCardNumber(card)
-        val expiredDate = mCardNfcAsyncTask!!.cardExpireDate
-        val cardType = mCardNfcAsyncTask!!.cardType
-        mCardNumberText!!.text = card
-        mExpireDateText!!.text = expiredDate
-        parseCardType(cardType)
-    }
-
     override fun doNotMoveCardSoFast() {
-        showSnackBar(mDoNotMoveCardMessage)
+        showSnackBar(getString(R.string.snack_doNotMoveCard))
     }
 
     override fun unknownEmvCard() {
-        showSnackBar(mUnknownEmvCardMessage)
+        showSnackBar(getString(R.string.snack_unknownEmv))
     }
 
     override fun cardWithLockedNfc() {
-        showSnackBar(mCardWithLockedNfcMessage)
+        showSnackBar(getString(R.string.snack_lockedNfcCard))
     }
 
-    override fun finishNfcReadCard() {
+    override fun readFail() {
+        showSnackBar(getString(R.string.snack_lockedNfcCard))
+    }
+
+    override fun readSuccess(cardNumber: String, expireDate: String?, type: EmvCardScheme) {
         mProgressDialog!!.dismiss()
-        mCardNfcAsyncTask = null
         mIsScanNow = false
+
+        content_putCard.visibility = View.GONE
+        content_cardReady.visibility = View.VISIBLE
+        mCardNumberText.text = getPrettyCardNumber(cardNumber)
+        mExpireDateText.text = expireDate.orEmpty()
+
+        val logo = when (type.toString()) {
+            CardNfcAsyncTask.CARD_VISA -> R.mipmap.visa_logo
+            CardNfcAsyncTask.CARD_MASTER_CARD -> R.mipmap.master_logo
+            else -> -1
+        }
+
+        mCardLogoIcon.setImageResource(logo)
     }
 
     private fun createProgressDialog() {
@@ -149,32 +157,20 @@ class MainActivity : AppCompatActivity(), CardNfcAsyncTask.CardNfcInterface {
             mTurnNfcDialog = AlertDialog.Builder(this)
                     .setTitle(title)
                     .setMessage(mess)
-                    .setPositiveButton(pos) { dialogInterface, i -> // Send the user to the settings page and hope they turn it on
-                        if (Build.VERSION.SDK_INT >= 16) {
-                            startActivity(Intent(Settings.ACTION_NFC_SETTINGS))
-                        } else {
-                            startActivity(Intent(Settings.ACTION_WIRELESS_SETTINGS))
-                        }
+                    .setPositiveButton(pos) { _, _ -> // Send the user to the settings page and hope they turn it on
+                        startActivity(Intent(Settings.ACTION_NFC_SETTINGS))
                     }
                     .setNegativeButton(neg) { dialogInterface, i -> onBackPressed() }.create()
         }
         mTurnNfcDialog!!.show()
     }
 
-    private fun initNfcMessages() {
-        mDoNotMoveCardMessage = getString(R.string.snack_doNotMoveCard)
-        mCardWithLockedNfcMessage = getString(R.string.snack_lockedNfcCard)
-        mUnknownEmvCardMessage = getString(R.string.snack_unknownEmv)
-    }
 
     private fun parseCardType(cardType: String) {
-        if (cardType == CardNfcAsyncTask.CARD_UNKNOWN) {
-            Snackbar.make(mToolbar!!, getString(R.string.snack_unknown_bank_card), Snackbar.LENGTH_LONG)
-                    .setAction("GO") { goToRepo() }
-        } else if (cardType == CardNfcAsyncTask.CARD_VISA) {
-            mCardLogoIcon!!.setImageResource(R.mipmap.visa_logo)
+        if (cardType == CardNfcAsyncTask.CARD_VISA) {
+            mCardLogoIcon.setImageResource(R.mipmap.visa_logo)
         } else if (cardType == CardNfcAsyncTask.CARD_MASTER_CARD) {
-            mCardLogoIcon!!.setImageResource(R.mipmap.master_logo)
+            mCardLogoIcon.setImageResource(R.mipmap.master_logo)
         }
     }
 
@@ -184,15 +180,8 @@ class MainActivity : AppCompatActivity(), CardNfcAsyncTask.CardNfcInterface {
                 + div + card.substring(12, 16))
     }
 
-    private fun goToRepo() {
-        val i = Intent(Intent.ACTION_VIEW, Uri.parse(getString(R.string.repoUrl)))
-        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        i.setPackage("com.android.chrome")
-        try {
-            startActivity(i)
-        } catch (e: ActivityNotFoundException) {
-            i.setPackage(null)
-            startActivity(i)
-        }
+    override fun onDestroy() {
+        super.onDestroy()
+        job.cancel()
     }
 }

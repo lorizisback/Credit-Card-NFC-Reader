@@ -157,7 +157,7 @@ public class EmvCard extends AbstractData {
 	 *
 	 * @return the expireDate
 	 */
-	public String getExpireDate() {
+	public String getExpiryDate() {
 		return expireDate;
 	}
 

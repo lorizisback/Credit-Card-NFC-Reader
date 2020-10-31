@@ -8,6 +8,7 @@
     <string name="snack_unknown_bank_card">This is unknown bank card. Please, go to my github repo!</string>
     <string name="snack_doNotMoveCard">Please do not move card, try again !</string>
     <string name="snack_unknownEmv">Unknown EMV card</string>
+    <string name="snack_readFail">Read Fail</string>
     <string name="snack_lockedNfcCard">NFC is locked on this card.</string>
     <string name="ad_nfcTurnOn_title">NFC is turned off.</string>
     <string name="ad_nfcTurnOn_message">You need turn on NFC module for scanning. Wish turn on it now?</string>
